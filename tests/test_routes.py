@@ -28,6 +28,8 @@ import os
 import logging
 from decimal import Decimal
 from unittest import TestCase
+from urllib.parse import quote_plus
+from service.models import Product, Category
 from service import app
 from service.common import status
 from service.models import db, init_db, Product
@@ -130,20 +132,24 @@ class TestProductRoutes(TestCase):
         self.assertEqual(new_product["available"], test_product.available)
         self.assertEqual(new_product["category"], test_product.category.name)
 
-        #
-        # Uncomment this code once READ is implemented
-        #
-
-        # # Check that the location header was correct
-        # response = self.client.get(location)
-        # self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # new_product = response.get_json()
-        # self.assertEqual(new_product["name"], test_product.name)
-        # self.assertEqual(new_product["description"], test_product.description)
-        # self.assertEqual(Decimal(new_product["price"]), test_product.price)
-        # self.assertEqual(new_product["available"], test_product.available)
-        # self.assertEqual(new_product["category"], test_product.category.name)
-
+    def test_get_product(self):
+        """It should Get a single Product"""
+        temp = self._create_products(1)[0]
+        response = self.client.get(f"{BASE_URL}/{temp.id}")
+        self.assertEqual(response.status_code,status.HTTP_200_OK)
+        test_product = response.get_json()
+        self.assertEqual(test_product["name"], temp.name)
+        self.assertEqual(test_product["description"], temp.description)
+        self.assertEqual(Decimal(test_product["price"]), temp.price)
+        self.assertEqual(test_product["available"], temp.available)
+        self.assertEqual(test_product["category"], temp.category.name)
+         #
+    def test_get_product_not_found(self):
+        """It should Get a single Product"""
+        id = 0
+        response = self.client.get(f"{BASE_URL}/{id}")
+        self.assertEqual(response.status_code,status.HTTP_404_NOT_FOUND)
+    
     def test_create_product_with_no_name(self):
         """It should not Create a Product without a name"""
         product = self._create_products()[0]
@@ -163,10 +169,83 @@ class TestProductRoutes(TestCase):
         response = self.client.post(BASE_URL, data={}, content_type="plain/text")
         self.assertEqual(response.status_code, status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
 
-    #
-    # ADD YOUR TEST CASES HERE
-    #
+    def test_update_product(self):
+        """It should update the product"""
+        product = self._create_products(1)[0]
+        product.description = "this is it"
+        temp = product.serialize()
+        response = self.client.put(f"products/{product.id}", json=temp)
+        print(response.get_json())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        updated_product = response.get_json()
+        self.assertEqual(updated_product["description"], "this is it")
+    
+    def test_query_by_name(self):
+        """It should Query Products by name"""
+        products = self._create_products(5)
+        test_name = products[0].name
+        name_count = len([product for product in products if product.name == test_name])
+        response = self.client.get(
+            BASE_URL, query_string=f"name={quote_plus(test_name)}"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.get_json()
+        self.assertEqual(len(data), name_count)
+        # check the data just to be sure
+        for product in data:
+            self.assertEqual(product["name"], test_name)
+    
+    def test_delete(self):
+        """It should delete the product"""
+        products = self._create_products(5)
+        test_product = products[0]
+        print(test_product.serialize())
+        response = self.client.delete(f"products/{products[0].id}")
+        print(response.get_json())
+        self.assertEqual(len(Product.all()),4)
+        response = self.client.get(f"products/{test_product.id}")
+        self.assertEqual(response.status_code,status.HTTP_404_NOT_FOUND)
 
+    def test_query_by_availability(self):
+        """It should Query Products by availability"""
+        products = self._create_products(10)
+        available_products = [product for product in products if product.available is True]
+        available_count = len(available_products)        
+        # test for available
+        response = self.client.get(
+            BASE_URL, query_string="available=true"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.get_json()
+        self.assertEqual(len(data), available_count)
+        # check the data just to be sure
+        for product in data:
+            self.assertEqual(product["available"], True) 
+
+    def test_query_by_category(self):
+        """It should Query Products by category"""
+        products = self._create_products(10)
+        category = products[0].category
+        found = [product for product in products if product.category == category]
+        found_count = len(found)
+        logging.debug("Found Products [%d] %s", found_count, found)
+
+        # test for available
+        response = self.client.get(BASE_URL, query_string=f"category={category.name}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.get_json()
+        self.assertEqual(len(data), found_count)
+        # check the data just to be sure
+        for product in data:
+            self.assertEqual(product["category"], category.name)
+
+    def test_get_product_list(self):
+        """It should Get a list of Products"""
+        self._create_products(5)
+        response = self.client.get(BASE_URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.get_json()
+        self.assertEqual(len(data), 5)
     ######################################################################
     # Utility functions
     ######################################################################
